@@ -16,7 +16,43 @@ cards.forEach(c=>c.addEventListener('click',()=>{const v=c.dataset.service;selec
 const dialog=$('#photo-dialog');document.querySelectorAll('[data-photo]').forEach(btn=>btn.addEventListener('click',()=>{if(!dialog?.showModal)return;const img=$('#dialog-image');img.src=btn.dataset.photo;img.alt=btn.dataset.caption||'CoreSafe project photo';$('#dialog-caption').textContent=btn.dataset.caption||'';dialog.showModal();}));dialog?.addEventListener('click',e=>{if(e.target===dialog)dialog.close()});
 const form=$('#quote-form'),formNotice=$('#form-notice');function formMsg(){const d=new FormData(form);const list=[`Hi CoreSafe, please quote me for the following:`,`Name: ${d.get('name')||'Not supplied'}`,`Company: ${d.get('company')||'Not supplied'}`,`Phone: ${d.get('phone')||'Not supplied'}`,`Email: ${d.get('email')||'Not supplied'}`,`Services: ${d.get('selected-services')||d.get('service')||'Not selected'}`,`Main service: ${d.get('service')||'Not selected'}`,`Site: ${d.get('site')||'Not supplied'}`,`Needed by: ${d.get('required-date')||'Not specified'}`,`Scope: ${d.get('scope')||'Not supplied'}`];return list.join('\n')}
 
-form?.addEventListener('submit',e=>{if(location.protocol==='file:'){e.preventDefault();formNotice.hidden=false;formNotice.textContent='This is a local preview. The quote form will submit once the site is deployed to Netlify. To test form delivery, deploy to Netlify and submit a test enquiry.';formNotice.scrollIntoView({behavior:'smooth',block:'nearest'});}});
+// A customer must press Send in WhatsApp; wa.me cannot automatically send messages.
+// Open WhatsApp directly in the user's submit gesture so popup blockers don't interfere.
+// Keep the existing Netlify Forms submission as an independent backup of the enquiry.
+form?.addEventListener('submit',event=>{
+  event.preventDefault();
+  if(!form.reportValidity())return;
+  const d=new FormData(form);
+  if(String(d.get('bot-field')||'').trim())return;
+
+  const whatsappLink=waUrl(formMsg());
+  const openTab=window.open(whatsappLink,'_blank');
+  if(openTab){try{openTab.opener=null}catch(_e){/* cross-origin window */}}
+
+  if(formNotice){
+    formNotice.hidden=false;
+    formNotice.textContent='WhatsApp is ready with your enquiry details. Please press Send in WhatsApp to deliver the message to CoreSafe.';
+  }
+
+  // Preserve an independent record in Netlify Forms where the site is actually hosted.
+  // This is best effort; sending the WhatsApp message is still the customer's action.
+  const hosted=/^(?:www\.)?coresafe\.co\.za$|\.netlify\.app$/i.test(location.hostname);
+  if(hosted){
+    fetch('/',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams(d).toString(),
+      keepalive:true
+    }).then(response=>{
+      if(!response.ok)throw new Error('Form backup failed');
+    }).catch(()=>{
+      if(formNotice)formNotice.textContent='WhatsApp is ready with your enquiry details. Please press Send in WhatsApp; the website backup could not be confirmed.';
+    });
+  }
+
+  // If the browser blocks a new tab, navigate in the current tab instead.
+  if(!openTab)window.location.assign(whatsappLink);
+});
 $('#year').textContent=new Date().getFullYear();
 $('#back-to-top')?.addEventListener('click',()=>window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}));
 let ticking=false;function scrollInfo(){const max=document.documentElement.scrollHeight-innerHeight;if($('#page-progress'))$('#page-progress').style.width=(max>0?Math.max(0,Math.min(100,scrollY/max*100)):0)+'%';$('#site-header').classList.toggle('scrolled',scrollY>14);const wa=$('.header-whatsapp');if(wa)wa.classList.toggle('is-pinned',scrollY>90);const backToTop=$('#back-to-top');if(backToTop)backToTop.hidden=scrollY<420;ticking=false}addEventListener('scroll',()=>{if(!ticking){ticking=true;requestAnimationFrame(scrollInfo)}},{passive:true});scrollInfo();

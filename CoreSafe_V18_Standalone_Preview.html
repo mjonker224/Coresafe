@@ -286,7 +286,43 @@ cards.forEach(c=>c.addEventListener('click',()=>{const v=c.dataset.service;selec
 const dialog=$('#photo-dialog');document.querySelectorAll('[data-photo]').forEach(btn=>btn.addEventListener('click',()=>{if(!dialog?.showModal)return;const img=$('#dialog-image');img.src=btn.dataset.photo;img.alt=btn.dataset.caption||'CoreSafe project photo';$('#dialog-caption').textContent=btn.dataset.caption||'';dialog.showModal();}));dialog?.addEventListener('click',e=>{if(e.target===dialog)dialog.close()});
 const form=$('#quote-form'),formNotice=$('#form-notice');function formMsg(){const d=new FormData(form);const list=[`Hi CoreSafe, please quote me for the following:`,`Name: ${d.get('name')||'Not supplied'}`,`Company: ${d.get('company')||'Not supplied'}`,`Phone: ${d.get('phone')||'Not supplied'}`,`Email: ${d.get('email')||'Not supplied'}`,`Services: ${d.get('selected-services')||d.get('service')||'Not selected'}`,`Main service: ${d.get('service')||'Not selected'}`,`Site: ${d.get('site')||'Not supplied'}`,`Needed by: ${d.get('required-date')||'Not specified'}`,`Scope: ${d.get('scope')||'Not supplied'}`];return list.join('\n')}
 
-form?.addEventListener('submit',e=>{if(location.protocol==='file:'){e.preventDefault();formNotice.hidden=false;formNotice.textContent='This is a local preview. The quote form will submit once the site is deployed to Netlify. To test form delivery, deploy to Netlify and submit a test enquiry.';formNotice.scrollIntoView({behavior:'smooth',block:'nearest'});}});
+// A customer must press Send in WhatsApp; wa.me cannot automatically send messages.
+// Open WhatsApp directly in the user's submit gesture so popup blockers don't interfere.
+// Keep the existing Netlify Forms submission as an independent backup of the enquiry.
+form?.addEventListener('submit',event=>{
+  event.preventDefault();
+  if(!form.reportValidity())return;
+  const d=new FormData(form);
+  if(String(d.get('bot-field')||'').trim())return;
+
+  const whatsappLink=waUrl(formMsg());
+  const openTab=window.open(whatsappLink,'_blank');
+  if(openTab){try{openTab.opener=null}catch(_e){/* cross-origin window */}}
+
+  if(formNotice){
+    formNotice.hidden=false;
+    formNotice.textContent='WhatsApp is ready with your enquiry details. Please press Send in WhatsApp to deliver the message to CoreSafe.';
+  }
+
+  // Preserve an independent record in Netlify Forms where the site is actually hosted.
+  // This is best effort; sending the WhatsApp message is still the customer's action.
+  const hosted=/^(?:www\.)?coresafe\.co\.za$|\.netlify\.app$/i.test(location.hostname);
+  if(hosted){
+    fetch('/',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams(d).toString(),
+      keepalive:true
+    }).then(response=>{
+      if(!response.ok)throw new Error('Form backup failed');
+    }).catch(()=>{
+      if(formNotice)formNotice.textContent='WhatsApp is ready with your enquiry details. Please press Send in WhatsApp; the website backup could not be confirmed.';
+    });
+  }
+
+  // If the browser blocks a new tab, navigate in the current tab instead.
+  if(!openTab)window.location.assign(whatsappLink);
+});
 $('#year').textContent=new Date().getFullYear();
 $('#back-to-top')?.addEventListener('click',()=>window.scrollTo({top:0,behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}));
 let ticking=false;function scrollInfo(){const max=document.documentElement.scrollHeight-innerHeight;if($('#page-progress'))$('#page-progress').style.width=(max>0?Math.max(0,Math.min(100,scrollY/max*100)):0)+'%';$('#site-header').classList.toggle('scrolled',scrollY>14);const wa=$('.header-whatsapp');if(wa)wa.classList.toggle('is-pinned',scrollY>90);const backToTop=$('#back-to-top');if(backToTop)backToTop.hidden=scrollY<420;ticking=false}addEventListener('scroll',()=>{if(!ticking){ticking=true;requestAnimationFrame(scrollInfo)}},{passive:true});scrollInfo();
@@ -355,12 +391,12 @@ if('IntersectionObserver' in window&&!(window.matchMedia&&window.matchMedia('(pr
 </div></section>
 <section aria-labelledby="quote-title" class="section quote-section" id="quote"><div class="quote-layout">
 <div class="quote-copy" data-reveal="left"><p class="eyebrow light">Request a quote</p><h2 id="quote-title">Tell us what<br/>you need.</h2><p>Request a tailored quotation for safety files, baseline risk assessments, HSE plans or ongoing compliance support anywhere in South Africa. Tell us what work you’re doing and where the project is based.</p><div class="quote-guide"><strong>Helpful details to include</strong><ul><li>Client name and project location in South Africa</li><li>Construction, mining, industrial or other work activities</li><li>Client HSE specification or safety-file requirements, if available</li><li>Workforce, machinery, dates and relevant certificates</li></ul></div></div>
-<form action="/thank-you.html" class="quote-form" data-netlify="true" data-reveal="right" id="quote-form" method="POST" name="coresafe-quote-request" netlify-honeypot="bot-field">
+<form action="/" class="quote-form" data-netlify="true" data-reveal="right" id="quote-form" method="POST" name="coresafe-quote-request" netlify-honeypot="bot-field">
 <input name="form-name" type="hidden" value="coresafe-quote-request"/><input id="selected-services" name="selected-services" type="hidden" value=""/><p class="honeypot"><label>Don't fill this field<input autocomplete="off" name="bot-field" tabindex="-1"/></label></p>
 <div class="form-top"><h3>Project enquiry</h3><span>Fields marked * are required</span></div>
 <div class="selected-services-visible" hidden="" id="selected-services-visible"><strong>Your selected services</strong><div class="chips" id="selected-chips"></div></div>
 <div class="form-grid"><label><span>Your name *</span><input autocomplete="name" name="name" placeholder="Full name" required="" type="text"/></label><label><span>Company *</span><input autocomplete="organization" name="company" placeholder="Company name" required="" type="text"/></label><label><span>Email address *</span><input autocomplete="email" name="email" placeholder="name@company.co.za" required="" type="email"/></label><label><span>Phone number *</span><input autocomplete="tel" name="phone" placeholder="Your contact number" required="" type="tel"/></label><label class="full"><span>What do you need? *</span><select id="primary-service" name="service" required=""><option value="">Choose a service</option><option>Safety files &amp; mobilisation</option><option>Risk assessments &amp; SHEQ documents</option><option>Passport 360 support</option><option>Compliance desk &amp; expiry monitoring</option><option>Safety personnel &amp; site support</option><option>HSE reviews &amp; corrective actions</option><option>Other / Not sure yet</option></select></label><label><span>Project / site</span><input name="site" placeholder="Location or client site"/></label><label><span>Required by</span><input name="required-date" type="date"/></label><label class="full"><span>Project scope of work *</span><textarea name="scope" placeholder="Tell us the site location, work activities, equipment, workforce and any client HSE requirements..." required="" rows="5"></textarea></label></div>
-<div class="form-actions"><button class="button orange submit-button" type="submit">Submit quote request </button></div><p aria-live="polite" class="form-notice" hidden="" id="form-notice" role="status"></p><p class="form-fine">CoreSafe uses your contact information only to respond to your enquiry. Submission does not constitute project acceptance or compliance approval.</p>
+<div class="form-actions"><button class="button orange submit-button" type="submit">Continue on WhatsApp </button></div><p aria-live="polite" class="form-notice" hidden="" id="form-notice" role="status"></p><p class="form-fine">Your details will open in WhatsApp. Review the message and press Send to deliver your enquiry to CoreSafe. Submission does not constitute project acceptance or compliance approval.</p>
 </form>
 </div></section>
 </main>
